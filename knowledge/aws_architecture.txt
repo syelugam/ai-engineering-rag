@@ -1,0 +1,25 @@
+
+# AWS Application Architecture
+
+Our web applications run on AWS ECS Fargate.
+Incoming HTTP and HTTPS traffic reaches services through
+an Application Load Balancer (ALB).
+
+# Deployment Strategy
+
+We use blue-green deployments to reduce deployment risk.
+The blue environment is the current version, and the green
+environment is the candidate version. Traffic is shifted
+after validation.
+
+# Security
+
+AWS IAM roles should follow the principle of least privilege.
+Applications must not store credentials in source code.
+Secrets should be stored in an appropriate secrets manager.
+
+# Monitoring
+
+Services should produce structured logs and useful metrics.
+Monitor request latency, error rates, and service health.
+Configure alerts for significant failures.

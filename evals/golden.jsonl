@@ -1,0 +1,29 @@
+{"question": "Where do the long-running HTTP APIs run?", "sections": ["Platform Runbook > Service Layout", "AWS Application Architecture"]}
+{"question": "What triggers the Lambda functions?", "sections": ["Platform Runbook > Service Layout"]}
+{"question": "Can two services share an IAM task role?", "sections": ["Platform Runbook > Service Layout"]}
+{"question": "How long does the green task set receive 10 percent of requests before the rest follows?", "sections": ["Platform Runbook > Release Process > Fargate Services"]}
+{"question": "What error rate blocks the full traffic shift during a Fargate release?", "sections": ["Platform Runbook > Release Process > Fargate Services"]}
+{"question": "How long do we keep the old tasks after a release?", "sections": ["Platform Runbook > Release Process > Fargate Services", "Platform Runbook > Release Process > Rollback"]}
+{"question": "How is a new version of a Lambda function released?", "sections": ["Platform Runbook > Release Process > Lambda Functions"]}
+{"question": "Which alias carries production traffic for Lambda functions?", "sections": ["Platform Runbook > Release Process > Lambda Functions", "Platform Runbook > Release Process > Rollback"]}
+{"question": "How do I roll back a Fargate service?", "sections": ["Platform Runbook > Release Process > Rollback"]}
+{"question": "How do I undo a bad Lambda release?", "sections": ["Platform Runbook > Release Process > Rollback"]}
+{"question": "Do I need to rebuild the image to roll back within the first hour?", "sections": ["Platform Runbook > Release Process > Rollback"]}
+{"question": "How often are secrets rotated?", "sections": ["Platform Runbook > Configuration and Secrets"]}
+{"question": "Where is non-secret configuration stored?", "sections": ["Platform Runbook > Configuration and Secrets"]}
+{"question": "Is it acceptable to put an API key in an environment file?", "sections": ["Platform Runbook > Configuration and Secrets"]}
+{"question": "What timeout do outbound HTTP calls use?", "sections": ["Platform Runbook > Timeouts and Retries"]}
+{"question": "What happens to an SQS message that keeps failing?", "sections": ["Platform Runbook > Timeouts and Retries"]}
+{"question": "How many failed health checks before a task is replaced?", "sections": ["Platform Runbook > Timeouts and Retries"]}
+{"question": "What p99 latency triggers an alert?", "sections": ["Platform Runbook > Observability"]}
+{"question": "Does a message in the dead-letter queue page the on-call engineer?", "sections": ["Platform Runbook > Observability"]}
+{"question": "How quickly must the on-call engineer acknowledge a page?", "sections": ["Platform Runbook > Incident Response"]}
+{"question": "What is the first thing to check when an incident starts?", "sections": ["Platform Runbook > Incident Response"]}
+{"question": "How often are updates required during a Severity 2 incident?", "sections": ["Platform Runbook > Incident Response"]}
+{"question": "When is the written review due after a Severity 1 incident?", "sections": ["Platform Runbook > Incident Response"]}
+{"question": "What database does our application use?", "sections": []}
+{"question": "Which Kubernetes version do we run?", "sections": []}
+{"question": "What is our monthly AWS bill?", "sections": []}
+{"question": "What programming language is the mobile app written in?", "sections": []}
+{"question": "How many vacation days do engineers get?", "sections": []}
+{"question": "Who approves the marketing budget?", "sections": []}
