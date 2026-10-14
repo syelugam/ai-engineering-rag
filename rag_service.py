@@ -1,7 +1,9 @@
 import math
+import os
 from typing import Optional
 
 import httpx
+from pydantic import BaseModel, Field, ValidationError
 from sentence_transformers import SentenceTransformer, util
 
 from ingest import ingest
@@ -157,57 +159,144 @@ class RAGService:
         question: str,
         ollama_url: str,
         model_name: str,
+        source: Optional[str] = None,
     ) -> dict:
-        passages = self.retrieve_relevant(question)
+        passages = self.retrieve_relevant(question, source=source)
 
         if not passages:
-            return {
-                "question": question,
-                "answer": "I don't know based on the available documentation.",
-                "model": model_name,
-                "sources": [],
-            }
+            return refusal(question, model_name, "no_relevant_passages")
 
         context = "\n\n".join(
             f"[{passage['chunk_id']}] {passage['text']}"
             for passage in passages
         )
+        prompt = ANSWER_PROMPT.format(context=context, question=question)
 
-        prompt = f"""
-You are an assistant answering questions about our AWS architecture.
-Use only the supplied context to answer.
-If the context does not contain the answer, say you don't know.
-Do not invent architecture details.
+        # Attempt 1: output constrained to the JSON schema.
+        # Attempt 2: unconstrained, relying on the prompt and a tolerant parser,
+        # because some models loop or stall under schema-constrained decoding.
+        parsed, raw = None, ""
+        for constrained in (True, False):
+            raw = await self._chat(prompt, ollama_url, model_name, constrained)
+            parsed = parse_model_answer(raw)
+            if parsed is not None:
+                break
+        if parsed is None:
+            raise ModelOutputError(
+                f"The model did not return valid JSON. Last reply: {raw[:300]!r}"
+            )
 
-Each context passage starts with an id in square brackets.
+        if not parsed.answerable:
+            return refusal(question, model_name, "model_said_unanswerable")
+
+        # Keep only citations that point at passages we actually supplied.
+        by_id = {passage["chunk_id"]: passage for passage in passages}
+        cited = [cid for cid in dict.fromkeys(parsed.citations) if cid in by_id]
+        invented = [cid for cid in parsed.citations if cid not in by_id]
+
+        if not cited:
+            # An answer we cannot trace back to a passage is not returned.
+            return refusal(
+                question, model_name, "no_valid_citations", invented_citations=invented
+            )
+
+        return {
+            "question": question,
+            "answerable": True,
+            "answer": parsed.answer.strip(),
+            "model": model_name,
+            "citations": cited,
+            "sources": [by_id[cid] for cid in cited],
+            "refusal_reason": None,
+            "invented_citations": invented,
+        }
+
+    async def _chat(
+        self, prompt: str, ollama_url: str, model_name: str, constrained: bool = True
+    ) -> str:
+        timeout = float(os.environ.get("OLLAMA_TIMEOUT", "120"))
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            body = {
+                "model": model_name,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": False,
+                # No hidden reasoning: it is slow, can run on for minutes,
+                # and its tokens count against num_predict below.
+                "think": False,
+                # Cap the reply length so a runaway generation fails fast.
+                "options": {"temperature": 0, "num_predict": 400},
+            }
+            if constrained:
+                # Ollama constrains the output to this JSON schema.
+                body["format"] = ModelAnswer.model_json_schema()
+            response = await client.post(
+                f"{ollama_url.rstrip('/')}/api/chat", json=body
+            )
+            response.raise_for_status()
+        return response.json()["message"]["content"]
+
+
+class ModelOutputError(Exception):
+    """The language model's reply could not be used."""
+
+
+class ModelAnswer(BaseModel):
+    # Field order matters: the model writes fields in this order, so it drafts
+    # the answer and finds its citations before it judges answerability.
+    answer: str = Field(description="brief answer, or empty if not answerable")
+    citations: list[str] = Field(
+        default_factory=list,
+        description="ids of the passages the answer is based on",
+    )
+    answerable: bool = Field(
+        description="true if the answer above is supported by the cited passages"
+    )
+
+
+ANSWER_PROMPT = """You answer questions about our AWS architecture using only the context below.
+Each passage starts with its id in square brackets.
+
+Rules:
+- First look for the answer in the context. If it is there, even stated in different words, give a brief answer, list in "citations" the ids of every passage you used (e.g. "platform_runbook.md#2"), and set "answerable" to true.
+- Only if the context really does not contain the answer: "answer" is "", "citations" is [] and "answerable" is false.
+- Never use knowledge that is not in the context. Never invent ids.
+
+Respond with JSON only: {{"answer": "...", "citations": ["..."], "answerable": true/false}}
 
 Context:
 {context}
 
 Question:
 {question}
-
-Give a brief answer, then cite the ids of the passages you used, like [platform_runbook.md#2].
 """
 
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            response = await client.post(
-                f"{ollama_url.rstrip('/')}/api/chat",
-                json={
-                    "model": model_name,
-                    "messages": [
-                        {"role": "user", "content": prompt}
-                    ],
-                    "stream": False,
-                },
-            )
-            response.raise_for_status()
 
-        data = response.json()
+def parse_model_answer(raw: str) -> Optional[ModelAnswer]:
+    """Parse the model's JSON reply; None if it is unusable.
 
-        return {
-            "question": question,
-            "answer": data["message"]["content"],
-            "model": model_name,
-            "sources": passages,
-        }
+    Tolerates code fences and text around the JSON object.
+    """
+    text = raw.strip()
+    candidates = [text]
+    start, end = text.find("{"), text.rfind("}")
+    if start != -1 and end > start:
+        candidates.append(text[start : end + 1])
+    for candidate in candidates:
+        try:
+            return ModelAnswer.model_validate_json(candidate)
+        except ValidationError:
+            continue
+    return None
+
+
+def refusal(question: str, model_name: str, reason: str, **extra) -> dict:
+    return {
+        "question": question,
+        "answerable": False,
+        "answer": "I don't know based on the available documentation.",
+        "model": model_name,
+        "citations": [],
+        "sources": [],
+        "refusal_reason": reason,
+        "invented_citations": extra.get("invented_citations", []),
+    }

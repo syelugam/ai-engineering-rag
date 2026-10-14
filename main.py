@@ -6,7 +6,7 @@ import logging
 import httpx
 from functools import lru_cache
 from pydantic import BaseModel, Field
-from rag_service import DEFAULT_RERANKER, RAGService
+from rag_service import DEFAULT_RERANKER, ModelOutputError, RAGService
 from vector_store import PgVectorStore
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
@@ -70,6 +70,12 @@ async def ask_question(request: AskRequest):
         raise HTTPException(
             status_code=502,
             detail="The local language model service failed.",
+        )
+    except ModelOutputError:
+        logger.exception("Model returned unusable output")
+        raise HTTPException(
+            status_code=502,
+            detail="The language model returned an unusable answer.",
         )
 
 class ChatRequest(BaseModel):
