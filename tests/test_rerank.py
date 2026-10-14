@@ -45,7 +45,9 @@ def test_rerank_keeps_vector_score_and_returns_probabilities(reranking_service):
 def test_rerank_casts_a_wider_net_then_trims_to_top_k(reranking_service):
     results = reranking_service.retrieve("question", top_k=2)
 
-    reranking_service.vector_search.assert_called_once_with("question", top_k=10)
+    reranking_service.vector_search.assert_called_once_with(
+        "question", top_k=10, source=None
+    )
     assert len(results) == 2
 
 
@@ -73,3 +75,24 @@ def test_each_mode_gets_its_own_default_threshold(tmp_path):
         == RERANK_MIN_SCORE
     )
     assert make_service(tmp_path, min_score=0.7).min_score == 0.7
+
+
+def test_database_mode_searches_the_store_with_the_source_filter(tmp_path):
+    store = MagicMock()
+    store.search.return_value = list(CANDIDATES)
+    with patch("rag_service.SentenceTransformer") as model_class:
+        service = RAGService(store=store)
+    model_class.return_value.encode.return_value = [0.1, 0.2]
+
+    results = service.retrieve("question", top_k=3, source="platform_runbook.md")
+
+    store.search.assert_called_once_with(
+        [0.1, 0.2], top_k=3, source="platform_runbook.md"
+    )
+    assert results == CANDIDATES
+
+
+def test_source_filter_without_database_is_rejected(tmp_path):
+    service = make_service(tmp_path)
+    with pytest.raises(ValueError):
+        service.retrieve("question", source="platform_runbook.md")

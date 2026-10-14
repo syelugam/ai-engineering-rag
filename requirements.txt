@@ -33,3 +33,5 @@ scipy==1.15.3
 sentence-transformers==3.4.1
 torch==2.2.2
 transformers==4.48.3
+psycopg[binary]==3.3.6
+pgvector==0.5.1

@@ -2,6 +2,7 @@
 
 Run:     python evaluate.py
 Rerank:  python evaluate.py --rerank       (compare against the plain run)
+Postgres: python evaluate.py --rerank --pg (search the pgvector index instead of memory)
 Gate:    python evaluate.py --min-hit3 0.85   (exits 1 if hit@3 is below the floor)
 """
 import argparse
@@ -144,19 +145,30 @@ def main() -> int:
     parser.add_argument(
         "--rerank", action="store_true", help="rerank with a cross-encoder"
     )
+    parser.add_argument(
+        "--pg", action="store_true", help="search Postgres/pgvector instead of memory"
+    )
     args = parser.parse_args()
 
     # Imported here so the tests don't load any models.
     from rag_service import DEFAULT_RERANKER, RAGService
 
-    if args.rerank:
-        service = RAGService(reranker_model_name=DEFAULT_RERANKER)
-        thresholds = RERANK_THRESHOLDS
-        print(f"Mode: vector search + rerank ({DEFAULT_RERANKER})")
-    else:
-        service = RAGService()
-        thresholds = COSINE_THRESHOLDS
-        print("Mode: vector search only")
+    store = None
+    if args.pg:
+        from vector_store import PgVectorStore
+
+        store = PgVectorStore()
+
+    service = RAGService(
+        reranker_model_name=DEFAULT_RERANKER if args.rerank else None,
+        store=store,
+    )
+    thresholds = RERANK_THRESHOLDS if args.rerank else COSINE_THRESHOLDS
+    print(
+        "Mode: "
+        + ("Postgres/pgvector" if args.pg else "in-memory")
+        + (f" + rerank ({DEFAULT_RERANKER})" if args.rerank else " vector search")
+    )
 
     rows = score_cases(load_cases(args.cases), service.retrieve)
     summary = summarize(rows)

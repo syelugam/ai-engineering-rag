@@ -7,6 +7,7 @@ import httpx
 from functools import lru_cache
 from pydantic import BaseModel, Field
 from rag_service import DEFAULT_RERANKER, RAGService
+from vector_store import PgVectorStore
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -41,7 +42,7 @@ class AskRequest(BaseModel):
 
 @lru_cache(maxsize=1)
 def get_rag_service() -> RAGService:
-    return RAGService(reranker_model_name=DEFAULT_RERANKER)
+    return RAGService(reranker_model_name=DEFAULT_RERANKER, store=PgVectorStore())
 
 
 @app.post("/ask")

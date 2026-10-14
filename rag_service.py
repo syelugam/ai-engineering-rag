@@ -22,9 +22,15 @@ class RAGService:
         reranker_model_name: Optional[str] = None,
         rerank_candidates: int = 10,
         min_score: Optional[float] = None,
+        store=None,
     ):
-        # document_path can be a single file or a folder of .md/.txt files.
-        self.chunks = ingest(document_path)
+        # With a store (e.g. PgVectorStore), chunks and embeddings live in the
+        # database and are loaded by index_documents.py. Without one, the
+        # documents are chunked and embedded in memory at startup.
+        self.store = store
+        if store is None:
+            # document_path can be a single file or a folder of .md/.txt files.
+            self.chunks = ingest(document_path)
 
         # Reranking is off unless a cross-encoder model name is given.
         self.reranker_model_name = reranker_model_name
@@ -35,28 +41,45 @@ class RAGService:
         self.min_score = min_score
 
         self.embedding_model = SentenceTransformer(embedding_model_name)
-        self.document_embeddings = self.embedding_model.encode(
-            [chunk.text for chunk in self.chunks],
-            convert_to_tensor=True,
-            normalize_embeddings=True,
-        )
+        if store is None:
+            self.document_embeddings = self.embedding_model.encode(
+                [chunk.text for chunk in self.chunks],
+                convert_to_tensor=True,
+                normalize_embeddings=True,
+            )
 
-    def retrieve(self, question: str, top_k: int = 3) -> list[dict]:
-        """Best passages for the question; reranked when a reranker is configured."""
+    def retrieve(
+        self, question: str, top_k: int = 3, source: Optional[str] = None
+    ) -> list[dict]:
+        """Best passages for the question; reranked when a reranker is configured.
+
+        source limits the search to one file (database mode only).
+        """
         if self.reranker_model_name is None:
-            return self.vector_search(question, top_k)
+            return self.vector_search(question, top_k, source=source)
 
         # Stage 1: cheap vector search casts a wide net.
         candidates = self.vector_search(
-            question, top_k=max(top_k, self.rerank_candidates)
+            question, top_k=max(top_k, self.rerank_candidates), source=source
         )
         # Stage 2: the cross-encoder reads question and passage together.
         return self.rerank(question, candidates)[:top_k]
 
-    def vector_search(self, question: str, top_k: int = 3) -> list[dict]:
+    def vector_search(
+        self, question: str, top_k: int = 3, source: Optional[str] = None
+    ) -> list[dict]:
         question = question.strip()
         if not question:
             raise ValueError("Question cannot be empty.")
+
+        if self.store is not None:
+            query_embedding = self.embedding_model.encode(
+                question, normalize_embeddings=True
+            )
+            return self.store.search(query_embedding, top_k=top_k, source=source)
+
+        if source is not None:
+            raise ValueError("Filtering by source needs the database store.")
 
         question_embedding = self.embedding_model.encode(
             question,
@@ -120,9 +143,10 @@ class RAGService:
         question: str,
         top_k: int = 3,
         min_score: Optional[float] = None,
+        source: Optional[str] = None,
     ) -> list[dict]:
         threshold = self.min_score if min_score is None else min_score
-        results = self.retrieve(question, top_k=top_k)
+        results = self.retrieve(question, top_k=top_k, source=source)
         return [
             item for item in results
             if item["score"] >= threshold
