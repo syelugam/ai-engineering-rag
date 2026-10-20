@@ -162,7 +162,16 @@ class RAGService:
         source: Optional[str] = None,
     ) -> dict:
         passages = self.retrieve_relevant(question, source=source)
+        return await self.answer_from_passages(question, passages, ollama_url, model_name)
 
+    async def answer_from_passages(
+        self,
+        question: str,
+        passages: list[dict],
+        ollama_url: str,
+        model_name: str,
+    ) -> dict:
+        """The grounded-answer step, for passages found by any retrieval strategy."""
         if not passages:
             return refusal(question, model_name, "no_relevant_passages")
 

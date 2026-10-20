@@ -28,6 +28,7 @@ How to work:
 - Use list_documents if you need to know which documents and sections exist.
 - Answer only from tool results, never from your own knowledge.
 - Cite every fact with the passage id in square brackets, e.g. [platform_runbook.md#4].
+  Copy ids exactly as they appear in the search results.
 - If the documents do not contain the answer, reply with exactly: {NOT_FOUND}
 """
 
@@ -88,6 +89,7 @@ class Agent:
         trace = []           # what the agent did, for debugging and the API
         done_calls = set()   # (tool, args) already executed
         nudged = False
+        asked_for_answer = False
 
         for _step in range(self.max_steps):
             message = await self.chat(messages, TOOLS)
@@ -96,6 +98,15 @@ class Agent:
 
             if not tool_calls:
                 answer = (message.get("content") or "").strip()
+                # Guardrail: an empty reply after searching. Ask for the answer once.
+                if not answer and trace and not asked_for_answer:
+                    asked_for_answer = True
+                    messages.append({
+                        "role": "user",
+                        "content": "Now write your final answer using the search results "
+                                   "above, citing passage ids in square brackets.",
+                    })
+                    continue
                 # Guardrail: an answer before any search is a guess. Push back once.
                 if not trace and not nudged and NOT_FOUND not in answer:
                     nudged = True
@@ -147,14 +158,20 @@ class Agent:
         raise ToolError(f"Unknown tool '{name}'. Available: search_docs, list_documents.")
 
     def _finish(self, question, answer, seen_passages, trace) -> dict:
-        cited_ids = list(dict.fromkeys(CITATION.findall(answer)))
-        valid = [cid for cid in cited_ids if cid in seen_passages]
-        invented = [cid for cid in cited_ids if cid not in seen_passages]
+        # A passage counts as cited if its id appears anywhere in the answer,
+        # bracketed or not. Bracketed ids that no tool returned are invented.
+        valid = sorted(
+            (cid for cid in seen_passages if cid in answer), key=answer.find
+        )
+        invented = [
+            cid for cid in dict.fromkeys(CITATION.findall(answer))
+            if cid not in seen_passages
+        ]
 
         if NOT_FOUND in answer and not valid:
-            return refusal(question, "model_said_unanswerable", trace)
+            return refusal(question, "model_said_unanswerable", trace, model_answer=answer)
         if not valid:
-            return refusal(question, "no_valid_citations", trace, invented)
+            return refusal(question, "no_valid_citations", trace, invented, answer)
 
         return {
             "question": question,
@@ -181,7 +198,7 @@ def parse_tool_call(call: dict) -> tuple:
     return function.get("name", ""), args
 
 
-def refusal(question, reason, trace, invented=()) -> dict:
+def refusal(question, reason, trace, invented=(), model_answer="") -> dict:
     return {
         "question": question,
         "answerable": False,
@@ -191,6 +208,7 @@ def refusal(question, reason, trace, invented=()) -> dict:
         "refusal_reason": reason,
         "invented_citations": list(invented),
         "steps": trace,
+        "model_answer": model_answer,   # what the model actually wrote, for debugging
     }
 
 

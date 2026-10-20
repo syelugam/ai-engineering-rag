@@ -2,6 +2,7 @@
 
 Run:  python evaluate_answers.py                       (fixed pipeline, golden set)
       python evaluate_answers.py --mode agent          (tool-calling agent)
+      python evaluate_answers.py --mode decompose      (split question, search each part)
       python evaluate_answers.py --cases evals/multihop.jsonl --mode agent
 (Needs Ollama running and the Postgres index built with index_documents.py.)
 
@@ -39,6 +40,7 @@ def score_answer(case: dict, result: dict) -> dict:
         "refusal_reason": result["refusal_reason"],
         "invented": result.get("invented_citations", []),
         "answer": result["answer"],
+        "model_answer": result.get("model_answer", ""),
     }
 
 
@@ -79,6 +81,13 @@ async def run(cases_path: str, mode: str) -> int:
 
         async def ask(question):
             return await agent.run(question)
+    elif mode == "decompose":
+        from planner import DecomposingRAG
+
+        decomposer = DecomposingRAG(service, ollama_url, model_name)
+
+        async def ask(question):
+            return await decomposer.answer(question)
     else:
         async def ask(question):
             return await service.answer(question, ollama_url, model_name)
@@ -123,12 +132,14 @@ async def run(cases_path: str, mode: str) -> int:
             print(f"    answered={row['answered']} reason={row['refusal_reason']} "
                   f"cited={row['cited_sections']}")
             print(f"    answer: {row['answer'][:120]}")
+            if row.get("model_answer"):
+                print(f"    model wrote: {row['model_answer'][:200]!r}")
     return 0
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="End-to-end answer evaluation.")
     parser.add_argument("--cases", default="evals/golden.jsonl")
-    parser.add_argument("--mode", choices=["pipeline", "agent"], default="pipeline")
+    parser.add_argument("--mode", choices=["pipeline", "agent", "decompose"], default="pipeline")
     args = parser.parse_args()
     sys.exit(asyncio.run(run(args.cases, args.mode)))

@@ -163,3 +163,42 @@ def test_arguments_sent_as_json_string_are_parsed():
     call = {"function": {"name": "search_docs", "arguments": '{"query": "x"}'}}
 
     assert parse_tool_call(call) == ("search_docs", {"query": "x"})
+
+
+def test_ids_without_brackets_still_count_as_citations():
+    rag = make_rag({"rollback": [ROLLBACK]})
+    model = ScriptedModel(
+        tool_call("search_docs", query="rollback"),
+        answer("Re-route the listener (source: runbook.md#4)."),
+    )
+
+    result = run(Agent(rag, model))
+
+    assert result["citations"] == ["runbook.md#4"]
+
+
+def test_refusal_keeps_what_the_model_wrote():
+    rag = make_rag({"rollback": [ROLLBACK]})
+    model = ScriptedModel(
+        tool_call("search_docs", query="rollback"),
+        answer("Re-route the listener to blue."),       # no citation at all
+    )
+
+    result = run(Agent(rag, model))
+
+    assert result["refusal_reason"] == "no_valid_citations"
+    assert result["model_answer"] == "Re-route the listener to blue."
+
+
+def test_empty_reply_after_search_gets_one_request_for_the_answer():
+    rag = make_rag({"rollback": [ROLLBACK]})
+    model = ScriptedModel(
+        tool_call("search_docs", query="rollback"),
+        answer(""),                                   # the model goes quiet
+        answer("Re-route the listener [runbook.md#4]."),
+    )
+
+    result = run(Agent(rag, model))
+
+    assert result["answerable"] is True
+    assert "final answer" in model.calls[2][-1]["content"]
