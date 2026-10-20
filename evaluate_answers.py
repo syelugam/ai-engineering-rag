@@ -1,11 +1,14 @@
 """End-to-end answer evaluation: retrieval + the language model, on the golden set.
 
-Run:  python evaluate_answers.py
+Run:  python evaluate_answers.py                       (fixed pipeline, golden set)
+      python evaluate_answers.py --mode agent          (tool-calling agent)
+      python evaluate_answers.py --cases evals/multihop.jsonl --mode agent
 (Needs Ollama running and the Postgres index built with index_documents.py.)
 
 For answerable questions it checks the model answered and cited a passage from
 an expected section. For unanswerable ones it checks the system refused.
 """
+import argparse
 import asyncio
 import os
 import sys
@@ -19,7 +22,10 @@ def score_answer(case: dict, result: dict) -> dict:
     cited_sections = {source["section"] for source in result["sources"]}
     answerable = bool(expected)
 
-    if answerable:
+    if answerable and case.get("require_all"):
+        # multi-part question: every part's section must be cited
+        correct = result["answerable"] and expected <= cited_sections
+    elif answerable:
         correct = result["answerable"] and bool(cited_sections & expected)
     else:
         correct = not result["answerable"]
@@ -52,7 +58,7 @@ def summarize_answers(rows: list) -> dict:
     }
 
 
-async def run() -> int:
+async def run(cases_path: str, mode: str) -> int:
     from dotenv import load_dotenv
 
     from rag_service import DEFAULT_RERANKER, RAGService
@@ -66,16 +72,29 @@ async def run() -> int:
     rows, timings = [], []
 
     errors = []
-    for case in load_cases():
+    if mode == "agent":
+        from agent import Agent, ollama_chat
+
+        agent = Agent(service, ollama_chat(ollama_url, model_name))
+
+        async def ask(question):
+            return await agent.run(question)
+    else:
+        async def ask(question):
+            return await service.answer(question, ollama_url, model_name)
+
+    steps = []
+    for case in load_cases(cases_path):
         started = time.perf_counter()
         try:
-            result = await service.answer(case["question"], ollama_url, model_name)
+            result = await ask(case["question"])
         except Exception as exc:   # one slow or broken call shouldn't end the run
             errors.append((case["question"], f"{type(exc).__name__}: {exc}"))
             print("E", end="", flush=True)
             continue
         timings.append(time.perf_counter() - started)
         rows.append(score_answer(case, result))
+        steps.append(len(result.get("steps", [])))
         print("." if rows[-1]["correct"] else "F", end="", flush=True)
 
     if errors:
@@ -87,12 +106,14 @@ async def run() -> int:
         return 1
 
     summary = summarize_answers(rows)
-    print(f"\n\nModel: {model_name}")
+    print(f"\n\nMode: {mode}   Cases: {cases_path}   Model: {model_name}")
     print(f"Answerable answered with a correct citation: {summary['answered_correctly']:.0%}")
     print(f"Answerable wrongly refused:                  {summary['answerable_refused']:.0%}")
     print(f"Unanswerable correctly refused:              {summary['unanswerable_refused']:.0%}")
     print(f"Answers containing invented citations:       {summary['invented_citation_rows']}")
     print(f"Average time per question:                   {sum(timings) / len(timings):.1f}s")
+    if mode == "agent":
+        print(f"Average tool calls per question:             {sum(steps) / len(steps):.1f}")
 
     failures = [row for row in rows if not row["correct"]]
     if failures:
@@ -106,4 +127,8 @@ async def run() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(asyncio.run(run()))
+    parser = argparse.ArgumentParser(description="End-to-end answer evaluation.")
+    parser.add_argument("--cases", default="evals/golden.jsonl")
+    parser.add_argument("--mode", choices=["pipeline", "agent"], default="pipeline")
+    args = parser.parse_args()
+    sys.exit(asyncio.run(run(args.cases, args.mode)))

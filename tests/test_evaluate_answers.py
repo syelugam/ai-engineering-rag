@@ -39,3 +39,10 @@ def test_summary_rates():
     assert summary["answerable_refused"] == 0.5
     assert summary["unanswerable_refused"] == 0.5
     assert summary["invented_citation_rows"] == 1
+
+
+def test_multi_part_case_needs_every_section_cited():
+    case = {"question": "q", "sections": ["Fargate", "Lambda"], "require_all": True}
+
+    assert score_answer(case, result(True, ["Fargate", "Lambda"]))["correct"]
+    assert not score_answer(case, result(True, ["Fargate"]))["correct"]

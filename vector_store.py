@@ -126,3 +126,13 @@ class PgVectorStore:
             }
             for chunk_id, src, section, text, score in rows
         ]
+
+    def list_sections(self) -> list:
+        """[(source, section), ...] in document order, for the agent's table of contents."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                # order by the chunk number after '#', numerically (#10 after #9)
+                "SELECT source, section, min(split_part(chunk_id, '#', 2)::int) AS n "
+                "FROM chunks GROUP BY source, section ORDER BY source, n"
+            ).fetchall()
+        return [(source, section) for source, section, _ in rows]

@@ -78,6 +78,23 @@ async def ask_question(request: AskRequest):
             detail="The language model returned an unusable answer.",
         )
 
+@app.post("/agent")
+async def ask_agent(request: AskRequest):
+    """Same question format as /ask, answered by the tool-calling agent."""
+    from agent import Agent, ollama_chat
+
+    settings = Settings()
+    agent = Agent(get_rag_service(), ollama_chat(settings.ollama_url, settings.ollama_model))
+    try:
+        return await agent.run(request.question.strip())
+    except httpx.HTTPError:
+        logger.exception("Ollama request failed during agent run")
+        raise HTTPException(
+            status_code=502,
+            detail="The local language model service failed.",
+        )
+
+
 class ChatRequest(BaseModel):
     question: str = Field(min_length=1, max_length=4000)
 

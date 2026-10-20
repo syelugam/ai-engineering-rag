@@ -77,3 +77,11 @@ def test_golden_set_points_at_sections_that_exist():
     for case in load_cases():
         for section in case["sections"]:
             assert section in real_sections, f"{case['question']!r} -> {section!r}"
+
+
+def test_multihop_set_points_at_sections_that_exist():
+    real_sections = {chunk.section for chunk in ingest("knowledge")}
+
+    for case in load_cases("evals/multihop.jsonl"):
+        for section in case["sections"]:
+            assert section in real_sections, f"{case['question']!r} -> {section!r}"

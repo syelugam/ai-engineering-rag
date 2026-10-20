@@ -1,0 +1,8 @@
+{"question": "Compare how a new release receives traffic for Fargate services and for Lambda functions.", "sections": ["Platform Runbook > Release Process > Fargate Services", "Platform Runbook > Release Process > Lambda Functions"], "require_all": true}
+{"question": "How long does the 10 percent canary last for Lambda versus for Fargate?", "sections": ["Platform Runbook > Release Process > Lambda Functions", "Platform Runbook > Release Process > Fargate Services"], "require_all": true}
+{"question": "A Fargate release went bad 90 minutes after traffic shifted. Can I still roll back by re-routing the listener, and if not, what do I do?", "sections": ["Platform Runbook > Release Process > Fargate Services", "Platform Runbook > Release Process > Rollback"], "require_all": true}
+{"question": "What timeout do outbound HTTP calls use, and what p99 latency triggers an alert?", "sections": ["Platform Runbook > Timeouts and Retries", "Platform Runbook > Observability"], "require_all": true}
+{"question": "What happens to an SQS message that fails three times, and does that page the on-call engineer?", "sections": ["Platform Runbook > Timeouts and Retries", "Platform Runbook > Observability"], "require_all": true}
+{"question": "Where are API keys stored, and how quickly must on-call acknowledge a page?", "sections": ["Platform Runbook > Configuration and Secrets", "Platform Runbook > Incident Response"], "require_all": true}
+{"question": "Which database do we use, and how is it backed up?", "sections": []}
+{"question": "What is our Kubernetes version, and who approves upgrades?", "sections": []}
